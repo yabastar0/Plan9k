@@ -26,7 +26,7 @@ function kernel.initd.invoke(method, ...)
     return component.invoke(computer.getBootAddress(), method, ...)
 end
 function kernel.initd.open(file) return kernel.initd.invoke("open", file) end
-function kernel.initd.read(handle) return kernel.initd.invoke("read", handle, math.huge) end
+function kernel.initd.read(handle) return kernel.initd.invoke("read", handle, math.maxinteger or math.huge) end
 function kernel.initd.close(handle) return kernel.initd.invoke("close", handle) end
 function kernel.initd.isDirectory(path) return kernel.initd.invoke("isDirectory", path) end
 
@@ -39,7 +39,7 @@ do
             screen = address
         end
     end
-    
+
     local gpu = component.list("gpu", true)()
     local w, h
     if gpu and screen then
@@ -58,10 +58,10 @@ do
         component.invoke(gpu, "fill", 1, 4, w, h, " ")
     end
     local y = 1
-        
+
     function kernel._println(msg)
         for line in string.gmatch(tostring(msg), "([^\n]+)") do
-            pcall(function()kernel.io.debug(msg)end)
+            pcall(function()kernel.io.debug(line)end)
         end
         if gpu and screen then
             for line in string.gmatch(tostring(msg), "([^\n]+)") do
@@ -75,7 +75,7 @@ do
             end
         end
     end
-    
+
     function kernel._status(done)
         if gpu and screen then
             component.invoke(gpu, "setBackground", 0xFF0000)
@@ -85,7 +85,7 @@ do
             component.invoke(gpu, "setForeground", 0xFFFFFF)
         end
     end
-    
+
     kernel.io.println = kernel._println
     kernel.io.debug = function()end
 end
@@ -96,7 +96,6 @@ if computer.setArchitecture then
 end
 
 --The most important function
-
 local panicPull = kernel._K.computer.pullSignal
 function kernel.panic()
     kernel._println("--------------------------------------------------------")
@@ -153,38 +152,20 @@ kernel._G = _G
 
 kernel.io.println("Loading base modules")
 
-local allmodules = {}
+local modules = {}
 for _, file in ipairs(kernel.initd.invoke("list", "lib/modules/base")) do
     local path = "lib/modules/base/" .. file
     if not kernel.initd.isDirectory(path) then
-        local mod = {path = path, file = file, name = file:match("[^0-9_%.]+"), override = (file:sub(-3) == "smd")}
-        table.insert(allmodules, mod)
+        table.insert(modules, {path = path, file = file,  name = file:match("[^0-9_%.]+")})
     end
 end
 
-local modules = {}
-table.sort(allmodules, function(a, b) return a.file < b.file end)
-
-for i = 1, #allmodules do
-    if allmodules[i].override and modules[#modules].name == allmodules[i].name then
-        kernel.io.println("OVERRIDE MODULE " .. allmodules[i].name)
-        modules[#modules] = allmodules[i]
-    else
-        modules[#modules + 1] = allmodules[i]
-    end
-end
-
-allmodules = nil
 local moduleEnv = setmetatable({kernel = kernel}, {__index = _K})
 kernel.modules = {}
-kernel.loadableModules = modules
+table.sort(modules, function(a, b) return a.file < b.file end)
 for i = 1, #modules do
-    if not modules[i] then
-        break
-    end
-    
     kernel.io.println("Load module " .. modules[i].name)
-    
+
     kernel.modules[modules[i].name] = {}
     kernel.modules[modules[i].name]._G = kernel.modules[modules[i].name]
     local program, reason = loadfile(modules[i].path, nil, nil, setmetatable(kernel.modules[modules[i].name], {__index = moduleEnv}))
@@ -200,7 +181,6 @@ for i = 1, #modules do
         kernel.panic()
     end
 end
-kernel.loadableModules = nil
 
 kernel.io.println("Starting base modules")
 
@@ -211,7 +191,7 @@ for i = 1, #modules do
             pcall(kernel._println, "Module tb: " .. debug.traceback())
             pcall(kernel._println, "E: " .. tostring(e))
         end))
-        
+
         if not result[1] then
             pcall(kernel._println, "Module start failed: " .. modules[i].name)
             pcall(kernel._println, result[2])
